@@ -402,7 +402,7 @@ def chat_with_ai(req: ChatRequest):
     """NL-чат с AI на основе проверенных фактов и профиля."""
     from urllib.request import Request, urlopen
     
-    # Загрузить контекст: verified facts + план
+    # Загрузить контекст: verified facts + план + personal_profile
     db = get_db()
     facts = db.execute("""
         SELECT vf.fact, vf.recommendation, vf.support_score 
@@ -410,18 +410,32 @@ def chat_with_ai(req: ChatRequest):
         WHERE vf.consensus='supported' 
         ORDER BY vf.support_score DESC LIMIT 15
     """).fetchall()
-    
+
     plan = db.execute("""
         SELECT section, content FROM health_plans 
         WHERE week_start=(SELECT MAX(week_start) FROM health_plans)
     """).fetchall()
+
+    # Добавляем personal_profile
+    profile_items = db.execute("""
+        SELECT section, item, dosage, timing, priority FROM personal_profile
+        WHERE section IN ('supplements','nutrition','sport','sleep')
+        ORDER BY section, priority LIMIT 30
+    """).fetchall()
     db.close()
-    
+
     facts_text = "\n".join(f"{i}. {r['fact']} (score: {r['support_score']:.2f})" for i, r in enumerate(facts, 1))
     plan_text = "\n".join(f"{r['section']}: {r['content'][:300]}" for r in plan)
-    
+    profile_text = "\n".join(
+        f"[{r['section']}] {r['item']}" + (f" — {r['dosage']}" if r['dosage'] else "")
+        for r in profile_items
+    )
+
     prompt = f"""Ты — AI health-ассистент для Алекса (46 лет, 74-76 кг, 174 см, живёт в Германии, цель — долголетие).
-Отвечай на русском, кратко и по делу, опираясь на проверенные научные факты.
+Отвечай на русском, кратко и по делу, опираясь на проверенные научные факты и персональный протокол.
+
+ПЕРСОНАЛЬНЫЙ ПРОТОКОЛ:
+{profile_text}
 
 ПРОВЕРЕННЫЕ ФАКТЫ:
 {facts_text}
@@ -531,6 +545,60 @@ def get_recommendations(req: RecommendRequest):
             "motivation": "Алекс, ты на верном пути! Каждый день — шаг к долголетию.",
             "focus_area": "водный баланс и движение",
         }
+
+
+# === Personal Profile (from AI Analyst) ===
+@app.get("/profile")
+def get_profile():
+    """Персональные протоколы: добавки, питание, спорт, сон."""
+    db = get_db()
+    rows = db.execute("""
+        SELECT section, priority, item, dosage, timing, reason, category
+        FROM personal_profile ORDER BY section, priority
+    """).fetchall()
+    db.close()
+
+    profile = {}
+    for r in rows:
+        s = r["section"]
+        if s not in profile:
+            profile[s] = []
+        profile[s].append({
+            "item": r["item"],
+            "priority": r["priority"],
+            "dosage": r["dosage"],
+            "timing": r["timing"],
+            "reason": r["reason"],
+            "category": r["category"],
+        })
+
+    return {"profile": profile, "total_items": len(rows)}
+
+
+@app.get("/schedule")
+def get_schedule():
+    """Недельное расписание из personal_profile."""
+    db = get_db()
+    rows = db.execute("""
+        SELECT day_of_week, time_of_day, activity, category, duration_min
+        FROM weekly_schedule ORDER BY day_of_week, time_of_day
+    """).fetchall()
+    db.close()
+
+    days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    schedule = {}
+    for r in rows:
+        day = days[r["day_of_week"]]
+        if day not in schedule:
+            schedule[day] = []
+        schedule[day].append({
+            "time": r["time_of_day"],
+            "activity": r["activity"],
+            "category": r["category"],
+            "duration_min": r["duration_min"],
+        })
+
+    return {"schedule": schedule, "total_events": len(rows)}
 
 
 if __name__ == "__main__":

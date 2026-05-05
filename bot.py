@@ -171,28 +171,23 @@ async def start(msg: types.Message):
 @dp.message(Command("habits"))
 @dp.message(F.text == "🔥 Привычки")
 async def habits_cmd(msg: types.Message):
-    """Показать привычки на сегодня."""
-    data = await api_get(f"/habits/{USER_ID}")
-    if not data:
-        await msg.answer("😔 Не удалось загрузить привычки. Попробуй позже.", reply_markup=main_kb())
+    """Показать AI-протокол питания из personal_profile."""
+    data = await api_get("/profile")
+    if not data or not data.get("profile", {}).get("nutrition"):
+        await msg.answer("😔 Протокол питания пока не сгенерирован.", reply_markup=main_kb())
         return
 
-    habits = data.get("habits", [])
-    if not habits:
-        await msg.answer(
-            "📭 На сегодня привычек пока нет.\n"
-            "Добавь новую: <code>/add_habit [название] [категория]</code>",
-            reply_markup=quick_actions_kb(),
-        )
-        return
+    nutrition = data["profile"]["nutrition"]
+    lines = ["🥗 <b>Твой AI-протокол питания</b>\n"]
 
-    done_count = sum(1 for h in habits if h.get("done"))
-    total = len(habits)
-    await msg.answer(
-        f"🔥 <b>Привычки на сегодня</b> ({done_count}/{total}):\n\n"
-        "<i>Нажми на привычку, чтобы отметить ✅</i>",
-        reply_markup=habits_inline_kb(habits),
-    )
+    for n in nutrition:
+        p_emoji = {1: "🔴", 2: "🟡", 3: "🟢"}.get(n["priority"], "⚪")
+        lines.append(f"{p_emoji} <b>{n['item']}</b>")
+        if n.get("reason"):
+            lines.append(f"     <i>{n['reason'][:130]}</i>")
+
+    lines.append(f"\n<code>/add_habit [название] [категория]</code> — добавить привычку")
+    await msg.answer("\n".join(lines), reply_markup=main_kb())
 
 
 @dp.message(Command("add_habit"))
@@ -236,28 +231,39 @@ async def add_habit_cmd(msg: types.Message):
 @dp.message(Command("supplements"))
 @dp.message(F.text == "💊 Добавки")
 async def supplements_cmd(msg: types.Message):
-    """Показать добавки на сегодня."""
-    data = await api_get(f"/supplements/{USER_ID}")
-    if not data:
-        await msg.answer("😔 Не удалось загрузить добавки. Попробуй позже.", reply_markup=main_kb())
+    """Показать AI-протокол добавок из personal_profile."""
+    data = await api_get("/profile")
+    if not data or not data.get("profile", {}).get("supplements"):
+        await msg.answer("😔 Протокол добавок пока не сгенерирован.", reply_markup=main_kb())
         return
 
-    supps = data.get("supplements", [])
-    if not supps:
-        await msg.answer(
-            "📭 Добавок на сегодня нет.\n"
-            "Добавь: <code>/add_supplement [название] [дозировка] [время]</code>",
-            reply_markup=quick_actions_kb(),
-        )
-        return
+    supps = data["profile"]["supplements"]
+    # Группируем по priority
+    must = [s for s in supps if s["priority"] == 1]
+    rec = [s for s in supps if s["priority"] == 2]
+    opt = [s for s in supps if s["priority"] == 3]
 
-    taken_count = sum(1 for s in supps if s.get("taken"))
-    total = len(supps)
-    await msg.answer(
-        f"💊 <b>Добавки на сегодня</b> ({taken_count}/{total}):\n\n"
-        "<i>Нажми на добавку, чтобы отметить приём 💊</i>",
-        reply_markup=supplements_inline_kb(supps),
-    )
+    lines = ["💊 <b>Твой AI-протокол добавок</b>\n"]
+    if must:
+        lines.append("<b>🔴 Обязательные:</b>")
+        for s in must:
+            dose = f" — {s['dosage']}" if s.get("dosage") else ""
+            time = f" [{s['timing']}]" if s.get("timing") else ""
+            lines.append(f"  • {s['item']}{dose}{time}")
+    if rec:
+        lines.append(f"\n<b>🟡 Рекомендованные:</b>")
+        for s in rec:
+            dose = f" — {s['dosage']}" if s.get("dosage") else ""
+            time = f" [{s['timing']}]" if s.get("timing") else ""
+            lines.append(f"  • {s['item']}{dose}{time}")
+    if opt:
+        lines.append(f"\n<b>🟢 Опциональные:</b>")
+        for s in opt:
+            dose = f" — {s['dosage']}" if s.get("dosage") else ""
+            lines.append(f"  • {s['item']}{dose}")
+
+    lines.append(f"\n<code>/add_supplement [название] [доза] [время]</code> — добавить в трекинг")
+    await msg.answer("\n".join(lines), reply_markup=main_kb())
 
 
 @dp.message(Command("add_supplement"))
@@ -305,109 +311,54 @@ async def add_supplement_cmd(msg: types.Message):
 @dp.message(Command("workout"))
 @dp.message(F.text == "🏋️ Тренировка")
 async def workout_cmd(msg: types.Message):
-    """Записать тренировку: /workout [тип] [длительность]."""
-    text = msg.text or msg.caption or ""
-    # Для кнопки "🏋️ Тренировка" — запрашиваем ввод
-    if text == "🏋️ Тренировка":
-        await msg.answer(
-            "🏋️ <b>Запиши тренировку:</b>\n"
-            "<code>/workout [тип] [длительность_мин]</code>\n\n"
-            "<i>Примеры:</i>\n"
-            "<code>/workout силовая 45</code>\n"
-            "<code>/workout бег 30</code>\n"
-            "<code>/workout йога 20</code>",
-            reply_markup=main_kb(),
-        )
+    """Показать AI-протокол тренировок из personal_profile."""
+    data = await api_get("/profile")
+    if not data or not data.get("profile", {}).get("sport"):
+        await msg.answer("😔 Протокол тренировок пока не сгенерирован.", reply_markup=main_kb())
         return
 
-    args = re.sub(r"^/workout\s+", "", text).strip()
-    if not args:
-        await msg.answer(
-            "📝 <b>Формат:</b> <code>/workout [тип] [длительность_мин]</code>\n"
-            "<i>Пример: /workout силовая 45</i>",
-            reply_markup=main_kb(),
-        )
-        return
+    sport = data["profile"]["sport"]
+    lines = ["🏋️ <b>Твой AI-протокол тренировок</b>\n"]
 
-    parts = args.rsplit(maxsplit=1)
-    if len(parts) == 2:
-        w_type, duration = parts
-        try:
-            int(duration)
-        except ValueError:
-            await msg.answer("⚠️ Длительность должна быть числом (минуты). Пример: <code>/workout бег 30</code>")
-            return
-    else:
-        w_type = parts[0]
-        duration = "0"
+    for s in sport:
+        p_emoji = {1: "🔴", 2: "🟡", 3: "🟢"}.get(s["priority"], "⚪")
+        freq = f" — {s['dosage']}" if s.get("dosage") else ""
+        lines.append(f"{p_emoji} <b>{s['item']}</b>{freq}")
+        if s.get("reason"):
+            lines.append(f"     <i>{s['reason'][:120]}</i>")
 
-    habit_name = f"🏋️ тренировка: {w_type} ({duration} мин)"
-
-    result = await api_post("/habits", {
-        "user_id": USER_ID,
-        "name": habit_name,
-        "category": "тренировка",
-    })
-
-    if result and result.get("habit"):
-        await msg.answer(
-            f"✅ Тренировка записана: <b>{w_type}</b> — {duration} мин!\n"
-            f"Отличная работа, Алекс! 🔥",
-            reply_markup=main_kb(),
-        )
-    else:
-        await msg.answer("😔 Не получилось записать тренировку. Попробуй позже.", reply_markup=main_kb())
+    lines.append(f"\n<code>/workout [тип] [минуты]</code> — записать тренировку")
+    await msg.answer("\n".join(lines), reply_markup=main_kb())
 
 
 @dp.message(Command("sleep"))
 @dp.message(F.text == "💤 Сон")
 async def sleep_cmd(msg: types.Message):
-    """Записать сон: /sleep [часы] [качество]."""
-    text = msg.text or msg.caption or ""
-    if text == "💤 Сон":
-        await msg.answer(
-            "💤 <b>Запиши сон:</b>\n"
-            "<code>/sleep [часы] [качество]</code>\n\n"
-            "<i>Примеры:</i>\n"
-            "<code>/sleep 7.5 отлично</code>\n"
-            "<code>/sleep 6 нормально</code>\n"
-            "<code>/sleep 5 плохо</code>",
-            reply_markup=main_kb(),
-        )
+    """Показать AI-протокол сна из personal_profile."""
+    data = await api_get("/profile")
+    if not data or not data.get("profile", {}).get("sleep"):
+        await msg.answer("😔 Протокол сна пока не сгенерирован.", reply_markup=main_kb())
         return
 
-    args = re.sub(r"^/sleep\s+", "", text).strip()
-    if not args:
-        await msg.answer(
-            "📝 <b>Формат:</b> <code>/sleep [часы] [качество]</code>\n"
-            "<i>Пример: /sleep 7.5 отлично</i>",
-            reply_markup=main_kb(),
-        )
-        return
+    sleep = data["profile"]["sleep"]
+    # Группируем по категориям
+    cats = {}
+    for s in sleep:
+        cat = s.get("category", "общее")
+        cats.setdefault(cat, []).append(s)
 
-    parts = args.split(maxsplit=1)
-    if len(parts) == 2:
-        hours, quality = parts
-    else:
-        hours = parts[0]
-        quality = "нормально"
+    lines = ["💤 <b>Твой AI-протокол сна</b>\n"]
+    emoji_map = {"timing": "⏰", "environment": "🌡️", "habits": "🧘", "supplements": "💊"}
 
-    habit_name = f"💤 сон: {hours}ч ({quality})"
+    for cat, items in cats.items():
+        em = emoji_map.get(cat, "📌")
+        lines.append(f"\n{em} <b>{cat.upper()}</b>")
+        for s in items:
+            p_emoji = {1: "🔴", 2: "🟡", 3: "🟢"}.get(s["priority"], "⚪")
+            lines.append(f"  {p_emoji} {s['item']}")
 
-    result = await api_post("/habits", {
-        "user_id": USER_ID,
-        "name": habit_name,
-        "category": "сон",
-    })
-
-    if result and result.get("habit"):
-        await msg.answer(
-            f"✅ Сон записан: <b>{hours}ч</b> — {quality}.\n"
-            f"Сладких снов, Алекс! 🌙",
-            reply_markup=main_kb(),
-        )
-    else:
-        await msg.answer("😔 Не получилось записать сон. Попробуй позже.", reply_markup=main_kb())
+    lines.append(f"\n<code>/sleep [часы] [качество]</code> — записать сон")
+    await msg.answer("\n".join(lines), reply_markup=main_kb())
 
 
 @dp.message(Command("recommend"))
