@@ -1,0 +1,26 @@
+# Чувствительные данные
+.env
+*.key
+*.pem
+
+# База данных (содержит личные данные)
+health.db
+*.sqlite
+
+# Логи
+*.log
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Кеш
+*.pyo
+.pytest_cache/
+
+# Системное
+.DS_Store
+Thumbs.db
